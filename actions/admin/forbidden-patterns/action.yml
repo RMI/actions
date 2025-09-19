@@ -1,0 +1,60 @@
+name: "Forbidden patterns scan"
+description: "Fail the job if any forbidden strings/regexes appear in tracked files"
+
+inputs:
+  patterns:
+    description: "Newline-delimited patterns (regex by default). If patterns_file provided as well, both are merged."
+    required: false
+    default: |
+      # Merge conflict markers (left/right)
+      ^<<<<<<<
+      ^>>>>>>>
+      # TODO-ish
+      \bTODO\b
+      \bFIXME\b
+      \bXXX\b
+  patterns_file:
+    description: "Path to a patterns file in the repo (one per line; '#' comments allowed). Merged with 'patterns'."
+    required: false
+    default: ""
+  mode:
+    description: "regex | literal"
+    required: false
+    default: "regex"
+  ignore_case:
+    description: "true | false"
+    required: false
+    default: "true"
+  include:
+    description: "Newline-delimited path globs to include"
+    required: false
+    default: ""
+  exclude:
+    description: "Newline-delimited path globs/dirs to exclude"
+    required: false
+    default: ""
+  max_annotations:
+    description: "Cap the number of ::error annotations (GitHub has limits per job)"
+    required: false
+    default: "200"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Prepare
+      shell: bash
+      run: |
+        chmod +x "${{ github.action_path }}/scripts/scan.sh"
+
+    - name: Scan
+      id: scan
+      shell: bash
+      run: |
+        "${{ github.action_path }}/scripts/scan.sh" \
+          --patterns "${{ inputs.patterns }}" \
+          --patterns-file "${{ inputs.patterns_file }}" \
+          --mode "${{ inputs.mode }}" \
+          --ignore-case "${{ inputs.ignore_case }}" \
+          --include "${{ inputs.include }}" \
+          --exclude "${{ inputs.exclude }}" \
+          --max-annotations "${{ inputs.max_annotations }}"
