@@ -41,16 +41,16 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Prepare
-      shell: bash
-      run: |
-        chmod +x "${{ github.action_path }}/scripts/scan.sh"
+    # - name: Prepare
+    #   shell: bash
+    #   run: |
+    #     chmod +x "${{ github.action_path }}/scripts/scan.sh"
 
     - name: Scan
       id: scan
       shell: bash
       run: |
-        "${{ github.action_path }}/scripts/scan.sh" \
+        "${{ github.action_path }}/scan.sh" \
           --patterns "${{ inputs.patterns }}" \
           --patterns-file "${{ inputs.patterns_file }}" \
           --mode "${{ inputs.mode }}" \
