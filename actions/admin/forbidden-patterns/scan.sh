@@ -5,8 +5,8 @@
 set -euo pipefail
 
 #  Parse args 
-PATTERNS_INPUT="foo"
-PATTERNS_FILE=".forbidden-patterns.txt"
+PATTERNS_INPUT=""
+PATTERNS_FILE=""
 MODE="regex"
 IGNORE_CASE="true"
 INCLUDE_INPUT=""
