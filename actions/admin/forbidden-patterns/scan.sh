@@ -59,9 +59,10 @@ if [[ "$IGNORE_CASE" == "true" ]]; then
 fi
 
 #  Pathspecs 
-# We avoid unbound array errors and only pass -- pathspecs if present.
-mapfile -t INC <<< "$(printf "%s\n" "$INCLUDE_INPUT" | awk 'NF')"
-mapfile -t EXC <<< "$(printf "%s\n" "$EXCLUDE_INPUT" | awk 'NF {print ":(exclude)" $0}')"
+# Parse include/exclude robustly (no phantom empty element)
+readarray -t INC < <(printf '%s\n' "$INCLUDE_INPUT" | tr -d '\r' | awk 'NF')
+readarray -t EXC_RAW < <(printf '%s\n' "$EXCLUDE_INPUT" | tr -d '\r' | awk 'NF')
+EXC=(); for e in "${EXC_RAW[@]}"; do EXC+=(":(exclude)$e"); done
 
 #  Run scan (never let grep's code abort before we annotate) 
 set +e
