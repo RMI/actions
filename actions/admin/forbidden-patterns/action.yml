@@ -1,0 +1,54 @@
+name: "Forbidden patterns scan"
+description: "Fail the job if any forbidden strings/regexes appear in tracked files"
+
+inputs:
+  patterns:
+    description: "Newline-delimited patterns (regex by default). If patterns_file provided as well, both are merged."
+    required: false
+    default: ""
+  patterns_file:
+    description: "Path to a patterns file in the repo (one per line; '#' comments allowed). Merged with 'patterns'."
+    required: false
+    default: ""
+  default_patterns:
+    description: "Merge default match patterns from actions's default_patterns.txt"
+    required: false
+    default: true
+  mode:
+    description: "regex | literal"
+    required: false
+    default: "regex"
+  ignore_case:
+    description: "true | false"
+    required: false
+    default: "true"
+  include:
+    description: "Newline-delimited path globs to include"
+    required: false
+    default: ""
+  exclude:
+    description: "Newline-delimited path globs/dirs to exclude"
+    required: false
+    default: ""
+  max_annotations:
+    description: "Cap the number of ::error annotations (GitHub has limits per job)"
+    required: false
+    default: "200"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Scan
+      id: scan
+      shell: bash
+      run: |
+        "${{ github.action_path }}/scan.sh" \
+          --patterns "${{ inputs.patterns }}" \
+          --patterns-file "${{ inputs.patterns_file }}" \
+          --default-patterns "${{ inputs.default_patterns }}" \
+          --defaults-file "${{ github.action_path }}/default_patterns.txt" \
+          --mode "${{ inputs.mode }}" \
+          --ignore-case "${{ inputs.ignore_case }}" \
+          --include "${{ inputs.include }}" \
+          --exclude "${{ inputs.exclude }}" \
+          --max-annotations "${{ inputs.max_annotations }}"

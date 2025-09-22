@@ -1,0 +1,20 @@
+# --- Merge conflict markers (skip the middle ======= to avoid MD false positives)
+^<<<<<<<
+^>>>>>>>
+
+# --- Common TODO-ish placeholders (with “word-ish” boundaries: non-letters or line edges)
+(^|[^[:alpha:]])TODO([^[:alpha:]]|$)
+(^|[^[:alpha:]])FIXME([^[:alpha:]]|$)
+(^|[^[:alpha:]])TBD([^[:alpha:]]|$)
+(^|[^[:alpha:]])XXX([^[:alpha:]]|$)
+
+# --- Editorial placeholders often left in docs/UI copy
+(^|[^[:alpha:]])TK(TK)?([^[:alpha:]]|$)
+lorem[[:space:]]+ipsum
+
+# --- “Finish me” config placeholders
+(^|[^[:alpha:]])CHANGEME([^[:alpha:]]|$)
+(^|[^[:alpha:]])REPLACEME([^[:alpha:]]|$)
+YOUR_API_KEY
+YOUR-TOKEN-HERE
+DO NOT COMMIT
