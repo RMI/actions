@@ -9,10 +9,12 @@ inputs:
       # Merge conflict markers (left/right)
       ^<<<<<<<
       ^>>>>>>>
-      # TODO-ish
-      \bTODO\b
-      \bFIXME\b
-      \bXXX\b
+      # TODO-ish (POSIX ERE-safe “word-ish” boundaries)
+      (^|[^[:alpha:]])TODO([^[:alpha:]]|$)
+      (^|[^[:alpha:]])FIXME([^[:alpha:]]|$)
+      (^|[^[:alpha:]])XXX([^[:alpha:]]|$)
+      #TKTK
+      (^|[^[:alpha:]])TK([^[:alpha:]]|$)
   patterns_file:
     description: "Path to a patterns file in the repo (one per line; '#' comments allowed). Merged with 'patterns'."
     required: false
