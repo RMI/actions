@@ -3,6 +3,7 @@
 # Always emits annotations *before* exiting nonzero.
 
 set -euo pipefail
+set -x
 
 #  Parse args 
 PATTERNS_INPUT="foo"
@@ -70,6 +71,9 @@ if [[ ${#INC[@]} -gt 0 || ${#EXC[@]} -gt 0 ]]; then
 else
   GIT_GREP_CMD=(git grep $FLAGS -f "$TMP_PATTERNS" --)
 fi
+
+echo "Running scan: ${GIT_GREP_CMD[*]}"
+
 "${GIT_GREP_CMD[@]}" > .matches.txt 2> .grep.err
 RC=$?
 set -e
