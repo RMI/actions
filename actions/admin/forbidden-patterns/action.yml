@@ -5,20 +5,15 @@ inputs:
   patterns:
     description: "Newline-delimited patterns (regex by default). If patterns_file provided as well, both are merged."
     required: false
-    default: |
-      # Merge conflict markers (left/right)
-      ^<<<<<<<
-      ^>>>>>>>
-      # TODO-ish (POSIX ERE-safe “word-ish” boundaries)
-      (^|[^[:alpha:]])TODO([^[:alpha:]]|$)
-      (^|[^[:alpha:]])FIXME([^[:alpha:]]|$)
-      (^|[^[:alpha:]])XXX([^[:alpha:]]|$)
-      #TKTK
-      (^|[^[:alpha:]])(TK)+([^[:alpha:]]|$)
+    default: ""
   patterns_file:
     description: "Path to a patterns file in the repo (one per line; '#' comments allowed). Merged with 'patterns'."
     required: false
     default: ""
+  default_patterns:
+    description: "Merge default match patterns from actions's default_patterns.txt"
+    required: false
+    default: true
   mode:
     description: "regex | literal"
     required: false
@@ -53,6 +48,8 @@ runs:
         "${{ github.action_path }}/scan.sh" \
           --patterns "${{ inputs.patterns }}" \
           --patterns-file "${{ inputs.patterns_file }}" \
+          --default-patterns "${{ inputs.default_patterns }}" \
+          --defaults-file "${{ github.action_path }}/default_patterns.txt" \
           --mode "${{ inputs.mode }}" \
           --ignore-case "${{ inputs.ignore_case }}" \
           --include "${{ inputs.include }}" \

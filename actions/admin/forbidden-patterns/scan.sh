@@ -12,11 +12,15 @@ IGNORE_CASE="true"
 INCLUDE_INPUT=""
 EXCLUDE_INPUT=""
 MAX_ANN="${MAX_ANNOTATIONS:-200}"
+DEFAULT_PATTERNS="true"
+DEFAULTS_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --patterns)        PATTERNS_INPUT="$2"; shift 2 ;;
     --patterns-file)   PATTERNS_FILE="$2"; shift 2 ;;
+    --default-patterns) DEFAULT_PATTERNS="$2"; shift 2 ;;
+    --defaults-file) DEFAULTS_FILE="$2"; shift 2 ;;
     --mode)            MODE="$2"; shift 2 ;;
     --ignore-case)     IGNORE_CASE="$2"; shift 2 ;;
     --include)         INCLUDE_INPUT="$2"; shift 2 ;;
@@ -29,6 +33,11 @@ done
 #  Build patterns file 
 TMP_PATTERNS=".forbidden-patterns.txt"
 : > "$TMP_PATTERNS"
+
+# Merge default (shipped) patterns first, if requested and present.
+if [[ "$DEFAULT_PATTERNS" == "true" && -n "$DEFAULTS_FILE" && -f "$DEFAULTS_FILE" ]]; then
+  cat "$DEFAULTS_FILE" >> "$TMP_PATTERNS"
+fi
 
 if [[ -n "$PATTERNS_FILE" && -f "$PATTERNS_FILE" ]]; then
   cat "$PATTERNS_FILE" >> "$TMP_PATTERNS"
