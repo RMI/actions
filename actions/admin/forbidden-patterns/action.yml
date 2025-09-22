@@ -25,6 +25,14 @@ inputs:
     description: "true | false"
     required: false
     default: "true"
+  include:
+    description: "Newline-delimited path globs to include"
+    required: false
+    default: ""
+  exclude:
+    description: "Newline-delimited path globs/dirs to exclude"
+    required: false
+    default: ""
   max_annotations:
     description: "Cap the number of ::error annotations (GitHub has limits per job)"
     required: false
@@ -45,4 +53,6 @@ runs:
           --patterns-file "${{ inputs.patterns_file }}" \
           --mode "${{ inputs.mode }}" \
           --ignore-case "${{ inputs.ignore_case }}" \
+          --include "${{ inputs.include }}" \
+          --exclude "${{ inputs.exclude }}" \
           --max-annotations "${{ inputs.max_annotations }}"

@@ -9,6 +9,8 @@ PATTERNS_INPUT="foo"
 PATTERNS_FILE=".forbidden-patterns.txt"
 MODE="regex"
 IGNORE_CASE="true"
+INCLUDE_INPUT=""
+EXCLUDE_INPUT=""
 MAX_ANN="${MAX_ANNOTATIONS:-200}"
 
 while [[ $# -gt 0 ]]; do
@@ -17,6 +19,8 @@ while [[ $# -gt 0 ]]; do
     --patterns-file)   PATTERNS_FILE="$2"; shift 2 ;;
     --mode)            MODE="$2"; shift 2 ;;
     --ignore-case)     IGNORE_CASE="$2"; shift 2 ;;
+    --include)         INCLUDE_INPUT="$2"; shift 2 ;;
+    --exclude)         EXCLUDE_INPUT="$2"; shift 2 ;;
     --max-annotations) MAX_ANN="$2"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -54,9 +58,18 @@ if [[ "$IGNORE_CASE" == "true" ]]; then
   FLAGS="$FLAGS -i"
 fi
 
+#  Pathspecs 
+# We avoid unbound array errors and only pass -- pathspecs if present.
+mapfile -t INC <<< "$(printf "%s\n" "$INCLUDE_INPUT" | awk 'NF')"
+mapfile -t EXC <<< "$(printf "%s\n" "$EXCLUDE_INPUT" | awk 'NF {print ":(exclude)" $0}')"
+
 #  Run scan (never let grep's code abort before we annotate) 
 set +e
-GIT_GREP_CMD=(git grep $FLAGS -f "$TMP_PATTERNS" -- .)
+if [[ ${#INC[@]} -gt 0 || ${#EXC[@]} -gt 0 ]]; then
+  GIT_GREP_CMD=(git grep $FLAGS -f "$TMP_PATTERNS" -- "${INC[@]}" "${EXC[@]}")
+else
+  GIT_GREP_CMD=(git grep $FLAGS -f "$TMP_PATTERNS" -- .)
+fi
 
 echo "Running scan: ${GIT_GREP_CMD[*]}"
 echo "Patterns:"
