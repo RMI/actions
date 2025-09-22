@@ -128,7 +128,7 @@ done < .matches.txt
   echo "### Forbidden pattern matches"
   echo
   echo "| File | Line | Snippet |"
-  echo "||||"
+  echo "|------|------|---------|"
   # Escape pipes minimally
   awk -F: '{
     file=$1; line=$2;
