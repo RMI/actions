@@ -69,7 +69,7 @@ set +e
 if [[ ${#INC[@]} -gt 0 || ${#EXC[@]} -gt 0 ]]; then
   GIT_GREP_CMD=(git grep $FLAGS -f "$TMP_PATTERNS" -- "${INC[@]}" "${EXC[@]}")
 else
-  GIT_GREP_CMD=(git grep $FLAGS -f "$TMP_PATTERNS" --)
+  GIT_GREP_CMD=(git grep $FLAGS -f "$TMP_PATTERNS" -- .)
 fi
 
 echo "Running scan: ${GIT_GREP_CMD[*]}"
