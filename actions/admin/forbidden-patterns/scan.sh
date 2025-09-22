@@ -66,10 +66,11 @@ EXC=(); for e in "${EXC_RAW[@]}"; do EXC+=(":(exclude)$e"); done
 
 #  Run scan (never let grep's code abort before we annotate) 
 set +e
-if [[ ${#INC[@]} -gt 0 || ${#EXC[@]} -gt 0 ]]; then
-  GIT_GREP_CMD=(git grep $FLAGS -f "$TMP_PATTERNS" -- "${INC[@]}" "${EXC[@]}")
+GIT_GREP_CMD=(git grep $FLAGS -f "$TMP_PATTERNS")
+if ((${#INC[@]})) || ((${#EXC[@]})); then
+  GIT_GREP_CMD+=("--" "${INC[@]}" "${EXC[@]}")
 else
-  GIT_GREP_CMD=(git grep $FLAGS -f "$TMP_PATTERNS" -- .)
+  GIT_GREP_CMD+=("--" ".")
 fi
 
 echo "Running scan: ${GIT_GREP_CMD[*]}"
