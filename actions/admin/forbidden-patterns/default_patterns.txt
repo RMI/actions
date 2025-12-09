@@ -9,7 +9,7 @@
 (^|[^[:alpha:]])XXX([^[:alpha:]]|$)
 
 # --- Editorial placeholders often left in docs/UI copy
-(^|[^[:alpha:]])TK(TK)?([^[:alpha:]]|$)
+(^|[^[:alpha:]])TKTK(TK)?([^[:alpha:]]|$)
 lorem[[:space:]]+ipsum
 
 # --- “Finish me” config placeholders
