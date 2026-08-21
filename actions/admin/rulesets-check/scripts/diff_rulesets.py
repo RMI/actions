@@ -83,6 +83,28 @@ def _short(value, limit: int = 300) -> str:
     return s if len(s) <= limit else s[: limit - 1] + "…"
 
 
+def values_equal(a, b) -> bool:
+    """Compare two leaf values, treating lists as **unordered**.
+
+    Every array in a ruleset is semantically a set — required-status-check
+    contexts, `conditions.ref_name.include`/`exclude`, `allowed_merge_methods`,
+    reviewers, etc. GitHub does not guarantee it returns these in the order an
+    overlay author wrote them, so an order-sensitive compare would report
+    spurious drift. Elements are canonicalized (dict keys sorted) and the lists
+    compared as multisets, so element order — and key order within object
+    elements — is ignored, while duplicates and values still matter.
+
+    (`rules` never reaches here: it's order-normalized into a {type: rule} map by
+    normalize_rules and walked as a dict.)
+    """
+    if isinstance(a, list) and isinstance(b, list):
+        return (
+            sorted(json.dumps(x, sort_keys=True) for x in a)
+            == sorted(json.dumps(x, sort_keys=True) for x in b)
+        )
+    return a == b
+
+
 class Diff:
     def __init__(self):
         # Each failure is a structured record so it can be rendered for the log,
@@ -113,9 +135,9 @@ class Diff:
                     self.walk(name, local[key], rv, child)
             return
 
-        # Leaf: compare by value. Non-`rules` arrays are compared whole, matching
-        # the wholesale merge semantics in resolve_local.py.
-        if local != remote:
+        # Leaf: compare by value. Lists are compared order-insensitively — every
+        # ruleset array is semantically a set (see values_equal).
+        if not values_equal(local, remote):
             self.failures.append(
                 {"kind": "mismatch", "name": name, "path": path,
                  "local": local, "remote": remote}
