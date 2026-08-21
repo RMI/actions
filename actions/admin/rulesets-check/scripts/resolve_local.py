@@ -156,6 +156,7 @@ def main() -> int:
         return 0
 
     written = 0
+    seen: dict = {}  # sanitized filename -> overlay that produced it
     for overlay_path in overlays:
         overlay = load_json(overlay_path)
         if not isinstance(overlay, dict):
@@ -189,7 +190,16 @@ def main() -> int:
         if not name:
             die(f"{overlay_path}: resolved ruleset has no 'name'")
 
-        out_path = out_dir / f"{sanitize(name)}.json"
+        san = sanitize(name)
+        if san in seen:
+            die(
+                f"{overlay_path}: resolved ruleset name '{name}' collides with the "
+                f"one from {seen[san].name} — both map to '{san}.json'. Two rulesets "
+                f"can't share a (sanitized) name; rename one."
+            )
+        seen[san] = overlay_path
+
+        out_path = out_dir / f"{san}.json"
         out_path.write_text(json.dumps(resolved, indent=2, sort_keys=True) + "\n")
         print(f"resolved {overlay_path.name} (template={template_name}) -> {out_path.name}")
         written += 1

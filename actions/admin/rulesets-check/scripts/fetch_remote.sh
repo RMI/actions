@@ -40,7 +40,15 @@ for ID in "${IDS[@]}"; do
   # NOTE: '-' MUST be last in the set — inside tr, 'a.-_' would be read as the
   # range '.'..'_' (which excludes '-' itself and mangles hyphenated names).
   SAN="$(printf '%s' "$NAME" | tr -c 'a-zA-Z0-9._-' '_')"
-  printf '%s\n' "$DETAIL" > "${OUT_DIR}/${SAN}.json"
+  DEST="${OUT_DIR}/${SAN}.json"
+  # Fail loudly on a name collision rather than silently clobbering a ruleset
+  # (two live rulesets whose names sanitize to the same file). OUT_DIR is fresh
+  # per run, so an existing DEST means a within-run collision.
+  if [[ -e "$DEST" ]]; then
+    echo "::error title=rulesets-check (fetch)::two live rulesets map to '${SAN}.json' (latest: name '${NAME}', id ${ID}); their names collide after sanitization" >&2
+    exit 1
+  fi
+  printf '%s\n' "$DETAIL" > "$DEST"
   echo "  ${ID}  ${NAME}  ->  ${SAN}.json"
 done
 
