@@ -1,5 +1,5 @@
 name: "Rulesets check"
-description: "Compare a repo's live GitHub rulesets against templated definitions; warn on schema drift, fail on value mismatch."
+description: "Fail when a repo's live GitHub rulesets drift from their templated definitions (allow-list: only keys the templates define are checked)."
 
 inputs:
   rulesets_dir:

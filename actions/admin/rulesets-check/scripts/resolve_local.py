@@ -96,6 +96,11 @@ def deep_merge(base, overlay, path: str):
                 )
             result_map = dict(base_map)
             for rtype, patch in ov_val.items():
+                if patch is not None and not isinstance(patch, dict):
+                    die(
+                        f"{loc}.{rtype}: a rule patch must be an object (to merge/add) "
+                        f"or null (to remove), not {type(patch).__name__}"
+                    )
                 if patch is None:
                     result_map.pop(rtype, None)  # explicit removal
                 elif rtype in result_map:
@@ -104,11 +109,7 @@ def deep_merge(base, overlay, path: str):
                     )
                 else:
                     # New rule type: strip a redundant nested 'type' if present.
-                    result_map[rtype] = (
-                        {k: v for k, v in patch.items() if k != "type"}
-                        if isinstance(patch, dict)
-                        else patch
-                    )
+                    result_map[rtype] = {k: v for k, v in patch.items() if k != "type"}
             merged["rules"] = rules_map_to_list(result_map)
         elif isinstance(ov_val, dict) and isinstance(base.get(key), dict):
             merged[key] = deep_merge(base[key], ov_val, loc)

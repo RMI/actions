@@ -18,10 +18,9 @@ OUT_DIR="${2:?usage: fetch_remote.sh <repo> <out_dir>}"
 mkdir -p "$OUT_DIR"
 
 echo "Fetching rulesets for ${REPO}"
-ALL="$(gh api "/repos/${REPO}/rulesets")"
-
-# IDs of every ruleset attached to the repo.
-mapfile -t IDS < <(printf '%s' "$ALL" | jq -r '.[].id')
+# IDs of every ruleset attached to the repo. --paginate walks all pages (the
+# rulesets endpoint is paginated); --jq is applied per page and concatenated.
+mapfile -t IDS < <(gh api --paginate "/repos/${REPO}/rulesets" --jq '.[].id')
 
 if ((${#IDS[@]} == 0)); then
   echo "No rulesets found on ${REPO}."
