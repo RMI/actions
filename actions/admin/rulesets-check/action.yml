@@ -40,5 +40,4 @@ runs:
       run: |
         python3 "${{ github.action_path }}/scripts/diff_rulesets.py" \
           "${RUNNER_TEMP}/local_rulesets" \
-          "${RUNNER_TEMP}/remote_rulesets" \
-          "${{ github.action_path }}/schema/diff-config.json"
+          "${RUNNER_TEMP}/remote_rulesets"

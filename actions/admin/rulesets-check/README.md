@@ -4,8 +4,12 @@ Compare a repository's **live GitHub rulesets** against **templated definitions 
 the repo**, so nobody can quietly change branch protections in the GitHub UI without the
 change showing up in CI.
 
-- **Value mismatch** on a tracked key → **fail** the job.
-- **Schema drift** (a key GitHub added or removed) → **warn**, don't fail.
+- **Allow-list model:** the resolved template+overlay *is* the allow-list — the check
+  compares exactly the keys you define, nothing else.
+- A tracked key whose value differs on the live ruleset, or is missing from it → **fail**.
+- Keys GitHub returns that you don't define (volatile IDs, new schema fields) → ignored.
+  Genuinely new schema properties are caught centrally by the [nightly coverage
+  check](#nightly-schema-coverage-check), not by nagging every consumer PR.
 - Emits GitHub annotations and a job-summary table.
 
 Templates (the RMI gitflow defaults) ship *with* this action, so consumer repos keep only a
@@ -128,16 +132,38 @@ Validation is enforced inline (missing/unknown `template`, missing `name`, dupli
 types, invalid JSON) — no external `jsonschema` dependency at runtime.
 `schema/overlay.schema.json` is provided for editor tooling.
 
-## `schema/diff-config.json` — stripping & ignoring
+## What gets checked (allow-list model)
 
-One file drives what the diff ignores, applied to **both** sides:
+The check is **local-driven**: the resolved template+overlay defines exactly which keys are
+compared. For every key you define:
 
-- **`strip`** — top-level fields removed entirely before comparing (never a drift signal):
-  `id`, `node_id`, `_links`, `created_at`, `updated_at`, `current_user_can_bypass`,
-  `bypass_actors`, `source`, `source_type`. `bypass_actors` is out of scope for now
-  (security-relevant but noisy); `source`/`source_type` are per-repo identity.
-- **`ignore`** — dotted key paths whose new/removed-key drift is silenced once triaged,
-  e.g. `rules.pull_request.parameters.some_new_github_field`.
+- present on the live ruleset with a different value → **fail**;
+- missing from the live ruleset → **fail** (the remote doesn't enforce something you track);
+- keys the live ruleset has that you *don't* define (`id`, `source`, timestamps, a
+  brand-new GitHub field) → **ignored**.
 
-`fetch_remote.sh` dumps raw API responses; all stripping happens here so there's a single
-source of truth.
+So there's no strip list and no ignore list to maintain — a field is checked *iff* a
+template or overlay sets it. `fetch_remote.sh` dumps raw API responses; the diff simply
+never looks at keys you didn't define.
+
+**To start (or stop) tracking a key:**
+
+| You want to… | Do this |
+|---|---|
+| Enforce a key's value across all repos | Add it to the relevant **template** (`templates/*.json`) — propagates to every consumer on their next run |
+| Enforce a key for one repo only | Add it to that repo's **overlay** |
+| Never track a key (silence the nightly coverage check for it) | Add its dotted path to `schema/acknowledged-untracked.json` |
+
+## Nightly schema-coverage check
+
+Because the per-PR check is quiet about fields you don't define, a separate **nightly**
+workflow (`.github/workflows/admin/rulesets-schema-check.yml` + `scripts/schema_coverage.py`)
+compares GitHub's published `repository-ruleset` schema against what the templates cover and
+opens/updates a tracking issue listing any schema property that is **neither tracked nor
+acknowledged**. That's the one place drift in GitHub's schema surfaces — centrally, once —
+instead of on every consumer PR.
+
+`schema/acknowledged-untracked.json` holds the dotted paths you've deliberately decided not
+to track (e.g. `id`, `source`, `bypass_actors`), so the nightly issue doesn't re-flag them.
+Coverage scope for v1 is top-level ruleset properties + rule types + rule parameters;
+`conditions` internals are compared as a whole (documented follow-up to deepen).

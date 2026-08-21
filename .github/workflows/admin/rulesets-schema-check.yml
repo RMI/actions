@@ -1,0 +1,56 @@
+name: Rulesets schema coverage
+
+# Nightly, non-blocking: compares GitHub's published repository-ruleset schema
+# against what our bundled templates cover, and opens/updates a tracking issue
+# when the schema has properties we neither track nor acknowledged. See
+# actions/admin/rulesets-check/scripts/schema_coverage.py.
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # nightly ~07:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency: rulesets-schema-check
+
+env:
+  ACTION_DIR: actions/admin/rulesets-check
+  OPENAPI_URL: https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json
+  ISSUE_TITLE: "Ruleset schema drift: GitHub schema has uncovered properties"
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Fetch GitHub OpenAPI description
+        run: curl -fsSL "$OPENAPI_URL" -o /tmp/openapi.json
+
+      - name: Check schema coverage
+        id: coverage
+        run: |
+          python3 "$ACTION_DIR/scripts/schema_coverage.py" \
+            "$ACTION_DIR/templates" \
+            "$ACTION_DIR/schema/acknowledged-untracked.json" \
+            /tmp/openapi.json
+
+      - name: Open or update tracking issue
+        if: steps.coverage.outputs.has_gaps == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BODY_FILE="${{ steps.coverage.outputs.report_file }}"
+          EXISTING="$(gh issue list --state open --search "$ISSUE_TITLE in:title" \
+            --json number --jq '.[0].number')"
+          if [ -n "$EXISTING" ]; then
+            echo "Updating existing issue #$EXISTING"
+            gh issue edit "$EXISTING" --body-file "$BODY_FILE"
+            gh issue comment "$EXISTING" --body "Re-detected on $(date -u +%Y-%m-%d). Body updated."
+          else
+            echo "Opening new tracking issue"
+            gh issue create --title "$ISSUE_TITLE" --body-file "$BODY_FILE"
+          fi

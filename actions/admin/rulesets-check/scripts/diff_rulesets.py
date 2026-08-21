@@ -1,23 +1,33 @@
 #!/usr/bin/env python3
 """Diff resolved-local rulesets against the live remote rulesets.
 
-Replaces the old ``diff --recursive`` step (PLAN.md §6.3). Walks both structures
-recursively and classifies at every level:
+Replaces the old ``diff --recursive`` step (PLAN.md §6.3). Uses an **allow-list**
+model: the resolved template+overlay *is* the allow-list — only keys we actually
+define are checked. This makes the per-PR check quiet and precise, and moves the
+"is GitHub's schema fully covered" question to the nightly schema-coverage job
+(scripts/schema_coverage.py).
+
+The walk is **local-driven**. For every key present in local:
 
   * key in both, values differ (at a leaf) -> FAIL  (tracked value mismatch)
-  * key only in remote                      -> WARN  (GitHub added a field)
-  * key only in local                       -> WARN  (GitHub removed/renamed it)
-  * ruleset present on only one side        -> WARN  (added/removed entirely)
+  * key in local but missing from remote    -> FAIL  (remote doesn't enforce a
+                                                       setting we track — real drift)
 
-Why recursive: GitHub adds/removes fields *inside* ``rules[].parameters`` and
-``conditions``, not just at the top level, so a top-level-only comparison would
-misclassify nested schema drift as a value mismatch and fail on it.
+Keys present only in **remote** are ignored — a field GitHub returns that we
+don't define is not our concern here (the nightly job flags genuinely new schema
+properties). Volatile/identity fields (id, source, timestamps, ...) are never in
+local, so they're auto-ignored — no strip list needed.
 
-``rules`` is normalized to a ``{type: rule}`` map on both sides before comparing,
-so the walk is order-independent and lines up by rule identity, not list index.
+``rules`` is normalized to a ``{type: rule}`` map on both sides, so the walk is
+order-independent and lines up by rule identity, not list index.
+
+Ruleset-level:
+  * a ruleset defined locally but absent on the remote -> FAIL
+  * a ruleset present on the remote but not defined locally -> informational
+    warning (we don't manage it; not a failure under the allow-list model)
 
 Exit code: 1 if any FAIL was recorded (after processing every ruleset, so one
-bad ruleset doesn't hide others); 0 otherwise (warnings alone never fail).
+bad ruleset doesn't hide others); 0 otherwise.
 """
 
 from __future__ import annotations
@@ -37,39 +47,6 @@ def load_json(p: Path):
     except json.JSONDecodeError as e:
         print(f"::error::invalid JSON in {p}: {e}", file=sys.stderr)
         return None
-
-
-def load_config(path: Path) -> "tuple[set, set]":
-    """Load (strip, ignore) sets from the diff-config file.
-
-    ``strip``  — top-level fields removed from both sides before comparing.
-    ``ignore`` — dotted key paths whose new/removed-key drift is silenced.
-
-    A bare list is accepted for backward compatibility and treated as ``ignore``.
-    """
-    if not path or not path.is_file():
-        return set(), set()
-    try:
-        data = json.loads(path.read_text())
-    except json.JSONDecodeError:
-        return set(), set()
-    if isinstance(data, list):
-        return set(), set(data)
-    if isinstance(data, dict):
-        strip = data.get("strip", [])
-        ignore = data.get("ignore", [])
-        return (
-            set(strip) if isinstance(strip, list) else set(),
-            set(ignore) if isinstance(ignore, list) else set(),
-        )
-    return set(), set()
-
-
-def strip_fields(node, fields: set):
-    """Return ``node`` with any top-level key in ``fields`` removed."""
-    if not isinstance(node, dict) or not fields:
-        return node
-    return {k: v for k, v in node.items() if k not in fields}
 
 
 def normalize_rules(node):
@@ -96,94 +73,79 @@ def normalize_rules(node):
 
 
 class Diff:
-    def __init__(self, ignore: set):
-        self.ignore = ignore
+    def __init__(self):
         self.failures: list[str] = []
         self.warnings: list[str] = []
 
-    def _ignored(self, path: str) -> bool:
-        return path in self.ignore
-
     def walk(self, name: str, local, remote, path: str) -> None:
+        """Local-driven recursive compare. Only keys in ``local`` are checked."""
         local = normalize_rules(local)
         remote = normalize_rules(remote)
 
-        if isinstance(local, dict) and isinstance(remote, dict):
-            for key in sorted(set(local) | set(remote)):
+        if isinstance(local, dict):
+            if not isinstance(remote, dict):
+                # We expect an object here but the remote has a scalar/other.
+                self._mismatch(name, path, local, remote)
+                return
+            for key in sorted(local):
                 child = f"{path}.{key}" if path else key
-                lv = local.get(key, MISSING)
                 rv = remote.get(key, MISSING)
-                if lv is MISSING:
-                    self._new_key(name, child)
-                elif rv is MISSING:
-                    self._removed_key(name, child)
+                if rv is MISSING:
+                    self._missing_on_remote(name, child, local[key])
                 else:
-                    self.walk(name, lv, rv, child)
+                    self.walk(name, local[key], rv, child)
             return
 
-        # Leaf (or type mismatch, or non-dict container): compare by value.
-        # Non-`rules` arrays are compared as whole values (wholesale semantics),
-        # matching how they're merged.
+        # Leaf: compare by value. Non-`rules` arrays are compared whole, matching
+        # the wholesale merge semantics in resolve_local.py.
         if local != remote:
-            self.failures.append(
-                f"Ruleset '{name}': value mismatch at '{path}'\n"
-                f"    local  = {json.dumps(local)}\n"
-                f"    remote = {json.dumps(remote)}"
-            )
+            self._mismatch(name, path, local, remote)
 
-    def _new_key(self, name: str, path: str) -> None:
-        if self._ignored(path):
-            return
-        self.warnings.append(
-            f"Ruleset '{name}': key '{path}' appeared in remote API response — "
-            f"review and either track it or add to the ignore list"
+    def _mismatch(self, name: str, path: str, local, remote) -> None:
+        self.failures.append(
+            f"Ruleset '{name}': value mismatch at '{path}'\n"
+            f"    local  = {json.dumps(local)}\n"
+            f"    remote = {json.dumps(remote)}"
         )
 
-    def _removed_key(self, name: str, path: str) -> None:
-        if self._ignored(path):
-            return
-        self.warnings.append(
-            f"Ruleset '{name}': key '{path}' missing from remote API response — "
-            f"review and either track it or add to the ignore list"
+    def _missing_on_remote(self, name: str, path: str, local_val) -> None:
+        self.failures.append(
+            f"Ruleset '{name}': tracked key '{path}' is missing from the live "
+            f"ruleset — the remote does not enforce a setting we require\n"
+            f"    local  = {json.dumps(local_val)}\n"
+            f"    remote = (absent)"
         )
 
 
 def emit_annotations(diff: Diff) -> None:
     for w in diff.warnings:
-        # Collapse to one line for the annotation form.
-        print(f"::warning title=Ruleset drift (schema)::{w.splitlines()[0]}")
+        print(f"::warning title=Ruleset not managed::{w.splitlines()[0]}")
     for f in diff.failures:
-        print(f"::error title=Ruleset drift (value)::{f.splitlines()[0]}")
+        print(f"::error title=Ruleset drift::{f.splitlines()[0]}")
 
 
-def write_summary(diff: Diff, orphans: list[str]) -> None:
+def write_summary(diff: Diff, unmanaged: list[str]) -> None:
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not summary_path:
         return
     lines = ["### Ruleset check", ""]
 
-    if not diff.failures and not diff.warnings and not orphans:
-        lines.append("✅ All resolved rulesets match the live rulesets.")
+    if not diff.failures and not unmanaged:
+        lines.append("✅ Every tracked key matches the live rulesets.")
     else:
         if diff.failures:
-            lines.append(f"#### ❌ Value mismatches (fail) — {len(diff.failures)}")
+            lines.append(f"#### ❌ Drift (fail) — {len(diff.failures)}")
             lines.append("")
             for f in diff.failures:
                 lines.append("```")
                 lines.append(f)
                 lines.append("```")
             lines.append("")
-        if orphans:
-            lines.append(f"#### ⚠️ Rulesets present on only one side — {len(orphans)}")
+        if unmanaged:
+            lines.append(f"#### ⚠️ Rulesets on the remote we don't manage — {len(unmanaged)}")
             lines.append("")
-            for o in orphans:
-                lines.append(f"- {o}")
-            lines.append("")
-        if diff.warnings:
-            lines.append(f"#### ⚠️ Schema drift (warn) — {len(diff.warnings)}")
-            lines.append("")
-            for w in diff.warnings:
-                lines.append(f"- {w.splitlines()[0]}")
+            for u in unmanaged:
+                lines.append(f"- {u}")
             lines.append("")
 
     with open(summary_path, "a") as fh:
@@ -193,36 +155,38 @@ def write_summary(diff: Diff, orphans: list[str]) -> None:
 def main() -> int:
     if len(sys.argv) < 3:
         print(
-            "usage: diff_rulesets.py <local_dir> <remote_dir> [config_file]",
+            "usage: diff_rulesets.py <local_dir> <remote_dir>",
             file=sys.stderr,
         )
         return 2
 
     local_dir = Path(sys.argv[1])
     remote_dir = Path(sys.argv[2])
-    config_file = Path(sys.argv[3]) if len(sys.argv) > 3 else None
 
-    strip, ignore = load_config(config_file) if config_file else (set(), set())
-    diff = Diff(ignore)
+    diff = Diff()
 
     local_files = {p.name: p for p in local_dir.glob("*.json")}
     remote_files = {p.name: p for p in remote_dir.glob("*.json")}
 
-    orphans: list[str] = []
+    # A ruleset we define but the remote lacks entirely -> fail.
     for only_local in sorted(set(local_files) - set(remote_files)):
-        msg = (
+        diff.failures.append(
             f"Ruleset '{only_local}' is defined locally but has no matching live "
             f"ruleset on the remote"
         )
-        orphans.append(msg)
-        print(f"::warning title=Ruleset added/removed::{msg}")
+        print(
+            f"::error title=Ruleset missing::Ruleset '{only_local}' is defined "
+            f"locally but not present on the remote"
+        )
+
+    # A ruleset on the remote we don't define -> informational (not our concern).
+    unmanaged: list[str] = []
     for only_remote in sorted(set(remote_files) - set(local_files)):
         msg = (
             f"Ruleset '{only_remote}' exists on the remote but is not defined "
-            f"locally"
+            f"locally — not managed by this check"
         )
-        orphans.append(msg)
-        print(f"::warning title=Ruleset added/removed::{msg}")
+        unmanaged.append(msg)
 
     for fname in sorted(set(local_files) & set(remote_files)):
         local = load_json(local_files[fname])
@@ -231,17 +195,16 @@ def main() -> int:
             diff.failures.append(f"Ruleset '{fname}': could not parse one side")
             continue
         name = local.get("name", fname)
-        # Strip volatile/identity fields from both sides before comparing.
-        local = strip_fields(local, strip)
-        remote = strip_fields(remote, strip)
         diff.walk(name, local, remote, "")
 
     emit_annotations(diff)
-    write_summary(diff, orphans)
+    for u in unmanaged:
+        print(f"::warning title=Ruleset not managed::{u}")
+    write_summary(diff, unmanaged)
 
     print(
-        f"\nSummary: {len(diff.failures)} mismatch(es), "
-        f"{len(diff.warnings)} schema warning(s), {len(orphans)} orphan(s)."
+        f"\nSummary: {len(diff.failures)} drift failure(s), "
+        f"{len(unmanaged)} unmanaged remote ruleset(s)."
     )
     return 1 if diff.failures else 0
 

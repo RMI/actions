@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Fetch the live rulesets for a repo and write one raw JSON file per ruleset,
-# named by sanitized ruleset name. Field stripping (volatile / identity fields)
-# is NOT done here — diff_rulesets.py strips both sides centrally from
-# schema/diff-config.json, so there's a single source of truth.
+# named by sanitized ruleset name. No field stripping — the allow-list diff
+# (diff_rulesets.py) only compares keys the templates define, so volatile /
+# identity fields (id, source, timestamps, ...) are ignored automatically.
 #
 # Usage: fetch_remote.sh <repo> <out_dir>
 #   <repo>    owner/name (e.g. RMI/stitch) — passed to `gh api`
