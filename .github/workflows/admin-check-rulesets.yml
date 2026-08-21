@@ -19,9 +19,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # NOTE: pinned to the feat/rulesets-check branch (PR #10) while in draft.
-      # `uses:` can't take an expression, so this ref is hardcoded — flip it to
-      # @main together with the merge of PR #10.
-      - uses: RMI/actions/actions/admin/rulesets-check@feat/rulesets-check
+      - uses: RMI/actions/actions/admin/rulesets-check@main
         with:
           rulesets_dir: ${{ inputs.rulesets_dir }}
