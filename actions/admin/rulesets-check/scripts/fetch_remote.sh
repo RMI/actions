@@ -18,9 +18,15 @@ OUT_DIR="${2:?usage: fetch_remote.sh <repo> <out_dir>}"
 mkdir -p "$OUT_DIR"
 
 echo "Fetching rulesets for ${REPO}"
-# IDs of every ruleset attached to the repo. --paginate walks all pages (the
-# rulesets endpoint is paginated); --jq is applied per page and concatenated.
-mapfile -t IDS < <(gh api --paginate "/repos/${REPO}/rulesets" --jq '.[].id')
+# List all rulesets first, in a plain assignment so a failed `gh api` is caught
+# by `set -e` and aborts. A process substitution (`mapfile < <(gh ...)`) would
+# hide gh's exit code, making an auth/API error indistinguishable from "no
+# rulesets" — the check would then pass vacuously or misreport every ruleset as
+# missing. `gh api --paginate` walks all pages (this endpoint is paginated),
+# emitting one JSON array per page; jq's streaming parser reads them all.
+RULESETS_JSON="$(gh api --paginate "/repos/${REPO}/rulesets")"
+
+mapfile -t IDS < <(printf '%s' "$RULESETS_JSON" | jq -r '.[].id')
 
 if ((${#IDS[@]} == 0)); then
   echo "No rulesets found on ${REPO}."
