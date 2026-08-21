@@ -154,6 +154,20 @@ never looks at keys you didn't define.
 | Enforce a key for one repo only | Add it to that repo's **overlay** |
 | Never track a key (silence the nightly coverage check for it) | Add its dotted path to `schema/acknowledged-untracked.json` |
 
+## Reading a failure
+
+Each drift failure reports the exact dotted path and both values, in three places:
+
+- the **step log** — a full block per failure (`local = …` / `remote = …`);
+- a **check annotation** — a one-line, value-bearing summary (e.g.
+  `rules.pull_request.parameters.require_last_push_approval differs — local=true remote=false`);
+- the **job summary** — the same detail in a table.
+
+For the whole picture, each *failing* ruleset's resolved-local and raw live JSON are dumped
+in a collapsed `::group::diagnostics: <name>` block in the log. To dump **every** ruleset
+(including passing ones — useful when a check passes but you expected a failure), re-run the
+job with **debug logging enabled** (GitHub sets `RUNNER_DEBUG=1`).
+
 ## Nightly schema-coverage check
 
 Because the per-PR check is quiet about fields you don't define, a separate **nightly**

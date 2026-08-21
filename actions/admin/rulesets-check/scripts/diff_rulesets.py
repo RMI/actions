@@ -11,7 +11,7 @@ The walk is **local-driven**. For every key present in local:
 
   * key in both, values differ (at a leaf) -> FAIL  (tracked value mismatch)
   * key in local but missing from remote    -> FAIL  (remote doesn't enforce a
-                                                       setting we track — real drift)
+                                                       setting we track — drift)
 
 Keys present only in **remote** are ignored — a field GitHub returns that we
 don't define is not our concern here (the nightly job flags genuinely new schema
@@ -25,6 +25,11 @@ Ruleset-level:
   * a ruleset defined locally but absent on the remote -> FAIL
   * a ruleset present on the remote but not defined locally -> informational
     warning (we don't manage it; not a failure under the allow-list model)
+
+Diagnostics: every failure prints its local/remote values to the step log and
+into a hover-able annotation, and the offending ruleset's resolved-local + live
+JSON are dumped in a collapsed ``::group::``. Re-running the job with debug
+logging (RUNNER_DEBUG=1) dumps every ruleset, passing or not.
 
 Exit code: 1 if any FAIL was recorded (after processing every ruleset, so one
 bad ruleset doesn't hide others); 0 otherwise.
@@ -72,10 +77,17 @@ def normalize_rules(node):
     return node
 
 
+def _short(value, limit: int = 300) -> str:
+    """One-line JSON, truncated for annotations (full value stays in the log)."""
+    s = json.dumps(value)
+    return s if len(s) <= limit else s[: limit - 1] + "…"
+
+
 class Diff:
     def __init__(self):
-        self.failures: list[str] = []
-        self.warnings: list[str] = []
+        # Each failure is a structured record so it can be rendered for the log,
+        # a concise annotation, and the step summary independently.
+        self.failures: list[dict] = []
 
     def walk(self, name: str, local, remote, path: str) -> None:
         """Local-driven recursive compare. Only keys in ``local`` are checked."""
@@ -84,14 +96,19 @@ class Diff:
 
         if isinstance(local, dict):
             if not isinstance(remote, dict):
-                # We expect an object here but the remote has a scalar/other.
-                self._mismatch(name, path, local, remote)
+                self.failures.append(
+                    {"kind": "mismatch", "name": name, "path": path or "(root)",
+                     "local": local, "remote": remote}
+                )
                 return
             for key in sorted(local):
                 child = f"{path}.{key}" if path else key
                 rv = remote.get(key, MISSING)
                 if rv is MISSING:
-                    self._missing_on_remote(name, child, local[key])
+                    self.failures.append(
+                        {"kind": "missing", "name": name, "path": child,
+                         "local": local[key]}
+                    )
                 else:
                     self.walk(name, local[key], rv, child)
             return
@@ -99,29 +116,81 @@ class Diff:
         # Leaf: compare by value. Non-`rules` arrays are compared whole, matching
         # the wholesale merge semantics in resolve_local.py.
         if local != remote:
-            self._mismatch(name, path, local, remote)
+            self.failures.append(
+                {"kind": "mismatch", "name": name, "path": path,
+                 "local": local, "remote": remote}
+            )
 
-    def _mismatch(self, name: str, path: str, local, remote) -> None:
-        self.failures.append(
-            f"Ruleset '{name}': value mismatch at '{path}'\n"
-            f"    local  = {json.dumps(local)}\n"
-            f"    remote = {json.dumps(remote)}"
+
+# --- rendering ---------------------------------------------------------------
+
+def failure_full(f: dict) -> str:
+    """Multi-line detail for the step log and summary."""
+    if f["kind"] == "mismatch":
+        return (
+            f"Ruleset '{f['name']}': value mismatch at '{f['path']}'\n"
+            f"    local  = {json.dumps(f['local'])}\n"
+            f"    remote = {json.dumps(f['remote'])}"
         )
-
-    def _missing_on_remote(self, name: str, path: str, local_val) -> None:
-        self.failures.append(
-            f"Ruleset '{name}': tracked key '{path}' is missing from the live "
-            f"ruleset — the remote does not enforce a setting we require\n"
-            f"    local  = {json.dumps(local_val)}\n"
+    if f["kind"] == "missing":
+        return (
+            f"Ruleset '{f['name']}': tracked key '{f['path']}' is missing from the "
+            f"live ruleset — the remote does not enforce a setting we require\n"
+            f"    local  = {json.dumps(f['local'])}\n"
             f"    remote = (absent)"
         )
+    if f["kind"] == "ruleset_missing":
+        return (
+            f"Ruleset '{f['name']}' is defined locally but has no matching live "
+            f"ruleset on the remote"
+        )
+    if f["kind"] == "parse":
+        return f"Ruleset '{f['name']}': could not parse one side"
+    return str(f)
 
 
-def emit_annotations(diff: Diff) -> None:
-    for w in diff.warnings:
-        print(f"::warning title=Ruleset not managed::{w.splitlines()[0]}")
+def failure_oneline(f: dict) -> str:
+    """Concise, value-bearing line for an annotation."""
+    if f["kind"] == "mismatch":
+        return (
+            f"Ruleset '{f['name']}': {f['path']} differs — "
+            f"local={_short(f['local'])} remote={_short(f['remote'])}"
+        )
+    if f["kind"] == "missing":
+        return (
+            f"Ruleset '{f['name']}': {f['path']} missing from live ruleset "
+            f"(local={_short(f['local'])})"
+        )
+    if f["kind"] == "ruleset_missing":
+        return f"Ruleset '{f['name']}' defined locally but absent on remote"
+    if f["kind"] == "parse":
+        return f"Ruleset '{f['name']}': could not parse one side"
+    return str(f)
+
+
+def emit_failures(diff: Diff) -> None:
+    """Print full detail to the log and a concise annotation for each failure."""
     for f in diff.failures:
-        print(f"::error title=Ruleset drift::{f.splitlines()[0]}")
+        # Full, human-readable detail in the step log (indented block).
+        print(failure_full(f))
+        # Concise, value-bearing annotation (surfaces on the Checks tab).
+        print(f"::error title=Ruleset drift::{failure_oneline(f)}")
+
+
+def dump_diagnostics(pairs: list[tuple], failing: set, full: bool) -> None:
+    """Collapsed per-ruleset dump of resolved-local vs live JSON.
+
+    Always dumps rulesets that failed; with RUNNER_DEBUG set, dumps all of them.
+    """
+    for name, local_obj, remote_obj in pairs:
+        if not full and name not in failing:
+            continue
+        print(f"::group::diagnostics: {name}")
+        print("----- resolved local (what we require) -----")
+        print(json.dumps(local_obj, indent=2, sort_keys=True))
+        print("----- live remote (raw from GitHub) -----")
+        print(json.dumps(remote_obj, indent=2, sort_keys=True))
+        print("::endgroup::")
 
 
 def write_summary(diff: Diff, unmanaged: list[str]) -> None:
@@ -138,7 +207,7 @@ def write_summary(diff: Diff, unmanaged: list[str]) -> None:
             lines.append("")
             for f in diff.failures:
                 lines.append("```")
-                lines.append(f)
+                lines.append(failure_full(f))
                 lines.append("```")
             lines.append("")
         if unmanaged:
@@ -154,10 +223,7 @@ def write_summary(diff: Diff, unmanaged: list[str]) -> None:
 
 def main() -> int:
     if len(sys.argv) < 3:
-        print(
-            "usage: diff_rulesets.py <local_dir> <remote_dir>",
-            file=sys.stderr,
-        )
+        print("usage: diff_rulesets.py <local_dir> <remote_dir>", file=sys.stderr)
         return 2
 
     local_dir = Path(sys.argv[1])
@@ -170,36 +236,37 @@ def main() -> int:
 
     # A ruleset we define but the remote lacks entirely -> fail.
     for only_local in sorted(set(local_files) - set(remote_files)):
-        diff.failures.append(
-            f"Ruleset '{only_local}' is defined locally but has no matching live "
-            f"ruleset on the remote"
-        )
-        print(
-            f"::error title=Ruleset missing::Ruleset '{only_local}' is defined "
-            f"locally but not present on the remote"
-        )
+        name = only_local[:-5] if only_local.endswith(".json") else only_local
+        diff.failures.append({"kind": "ruleset_missing", "name": name})
 
     # A ruleset on the remote we don't define -> informational (not our concern).
     unmanaged: list[str] = []
     for only_remote in sorted(set(remote_files) - set(local_files)):
-        msg = (
+        unmanaged.append(
             f"Ruleset '{only_remote}' exists on the remote but is not defined "
             f"locally — not managed by this check"
         )
-        unmanaged.append(msg)
 
+    pairs: list[tuple] = []
     for fname in sorted(set(local_files) & set(remote_files)):
         local = load_json(local_files[fname])
         remote = load_json(remote_files[fname])
         if local is None or remote is None:
-            diff.failures.append(f"Ruleset '{fname}': could not parse one side")
+            name = local.get("name", fname) if isinstance(local, dict) else fname
+            diff.failures.append({"kind": "parse", "name": name})
             continue
         name = local.get("name", fname)
+        pairs.append((name, local, remote))
         diff.walk(name, local, remote, "")
 
-    emit_annotations(diff)
+    emit_failures(diff)
     for u in unmanaged:
         print(f"::warning title=Ruleset not managed::{u}")
+
+    # Diagnostics: dump the failing rulesets (or all, under RUNNER_DEBUG).
+    failing = {f["name"] for f in diff.failures}
+    dump_diagnostics(pairs, failing, bool(os.environ.get("RUNNER_DEBUG")))
+
     write_summary(diff, unmanaged)
 
     print(
