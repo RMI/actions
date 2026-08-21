@@ -1,0 +1,15 @@
+{
+  "$comment": "Central config for diff_rulesets.py. Applied to BOTH the resolved-local and live-remote rulesets. 'strip' removes top-level fields entirely before comparing (volatile / server-assigned / per-repo identity — never a drift signal). 'ignore' silences new/removed-key warnings at specific dotted paths that have already been triaged (e.g. \"rules.pull_request.parameters.some_new_github_field\").",
+  "strip": [
+    "id",
+    "node_id",
+    "_links",
+    "created_at",
+    "updated_at",
+    "current_user_can_bypass",
+    "bypass_actors",
+    "source",
+    "source_type"
+  ],
+  "ignore": []
+}

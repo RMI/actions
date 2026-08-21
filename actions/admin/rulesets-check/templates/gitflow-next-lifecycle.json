@@ -1,0 +1,23 @@
+{
+  "conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "refs/heads/next",
+        "refs/heads/hotfix/**",
+        "refs/heads/demo/**"
+      ]
+    }
+  },
+  "enforcement": "active",
+  "name": "gitflow-next-lifecycle",
+  "rules": [
+    {
+      "type": "creation"
+    },
+    {
+      "type": "deletion"
+    }
+  ],
+  "target": "branch"
+}

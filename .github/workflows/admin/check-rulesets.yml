@@ -1,0 +1,24 @@
+name: Rulesets Checks
+
+# Thin reusable-workflow wrapper around the rulesets-check composite action, so
+# consumer repos can call it with one `uses:` line instead of hand-writing a job
+# with checkout. See actions/admin/rulesets-check/README.md.
+
+on:
+  workflow_call:
+    inputs:
+      rulesets_dir:
+        type: string
+        required: false
+        default: .github/rulesets
+
+jobs:
+  rulesets:
+    name: "Check GH rulesets"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: RMI/actions/actions/admin/rulesets-check@main
+        with:
+          rulesets_dir: ${{ inputs.rulesets_dir }}
