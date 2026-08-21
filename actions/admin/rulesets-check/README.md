@@ -41,7 +41,7 @@ jobs:
 ```yaml
 jobs:
   rulesets:
-    uses: RMI/actions/.github/workflows/admin/check-rulesets.yml@main
+    uses: RMI/actions/.github/workflows/admin-check-rulesets.yml@main
 ```
 
 ### Inputs
@@ -157,7 +157,7 @@ never looks at keys you didn't define.
 ## Nightly schema-coverage check
 
 Because the per-PR check is quiet about fields you don't define, a separate **nightly**
-workflow (`.github/workflows/admin/rulesets-schema-check.yml` + `scripts/schema_coverage.py`)
+workflow (`.github/workflows/admin-rulesets-schema-check.yml` + `scripts/schema_coverage.py`)
 compares GitHub's published `repository-ruleset` schema against what the templates cover and
 opens/updates a tracking issue listing any schema property that is **neither tracked nor
 acknowledged**. That's the one place drift in GitHub's schema surfaces — centrally, once —
