@@ -30,10 +30,11 @@ RMI/actions/
 │ │ ├── gitflow-main.json
 │ │ ├── gitflow-production.json
 │ │ ├── gitflow-next-lifecycle.json
-│ │ └── gitflow-next-pr.json
+│ │ ├── gitflow-next-pr.json
+│ │ └── blank.json # minimal base for fully custom rulesets
 │ ├── schema/
-│ │ ├── overlay.schema.json
-│ │ └── tracked-keys.json
+│ │ ├── overlay.schema.json # reference schema for editor tooling
+│ │ └── diff-config.json # { strip: [...], ignore: [...] } — drives the diff
 │ └── README.md
 ├── .github/
 │ └── workflows/
@@ -64,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: RMI/actions/actions/admin/rulesets-check@v1
+      - uses: RMI/actions/actions/admin/rulesets-check@main
         with:
           rulesets_dir: .github/rulesets   # default value if omitted
 ```
@@ -77,7 +78,7 @@ jobs:
 ### 3.2 Consumer repo's overlay files (option A: one file per ruleset)
 
 Each ruleset the repo wants checked is represented by **one overlay file** in
-`rulesets_dir`, name-matched to the template it extends:
+`rulesets_dir`:
 
 ```
 .github/rulesets/
@@ -85,66 +86,78 @@ Each ruleset the repo wants checked is represented by **one overlay file** in
 ├── gitflow-production.overlay.json
 ├── gitflow-next-lifecycle.overlay.json
 ├── gitflow-next-pr.overlay.json
-└── copilot-review.overlay.json      # repo-specific, see "literal" note below
+└── copilot-review.overlay.json      # fully custom, uses the "blank" template
 ```
 
-The filename stem before `.overlay.json` selects the template: `gitflow-main.overlay.json`
-→ template `gitflow-main`. This mirrors the one-file-per-ruleset layout the repos already
-have, so `git blame` on a small overlay reads cleanly and repo intent stays visible in
-history rather than living in invisible action defaults.
+Every overlay **must** name its `template` explicitly (no filename inference — the filename
+is free to be descriptive). This keeps `git blame` on a small overlay readable and repo
+intent visible in history rather than living in invisible action defaults.
 
-An overlay is a **sparse** object holding only what this repo changes from the template.
-The common case is a few fields deep inside one rule — e.g. tpr's entire `gitflow-main`
-divergence:
+An overlay is a **sparse** object naming a template plus only what this repo changes from
+it. The common case is a few fields deep inside one rule — e.g. a repo overriding one
+`pull_request` parameter on top of `gitflow-production`:
 
 ```json
 {
+  "template": "gitflow-production",
   "rules": {
     "pull_request": {
-      "parameters": {
-        "dismiss_stale_reviews_on_push": true,
-        "require_last_push_approval": true
-      }
+      "parameters": { "required_approving_review_count": 1 }
     }
   }
 }
 ```
 
-An empty overlay (`{}`) means "take the template verbatim" — the explicit-file-per-ruleset
-convention keeps that intent visible instead of implicit.
+A template-only overlay (`{ "template": "gitflow-main" }`) means "take the template
+verbatim".
 
-**Selecting the template explicitly / literal rulesets.** By default the template is
-inferred from the filename stem. A repo-specific ruleset that maps to no bundled template
-(e.g. tpr's `code-quality-copilot-review`) sets `"template": null` and supplies the whole
-ruleset under `ruleset`:
+**Fully custom rulesets.** A repo-specific ruleset that maps to no gitflow template
+(e.g. tpr's `code-quality-copilot-review`) uses the bundled **`blank`** template (a minimal
+base: `target: branch`, `enforcement: active`, no rules) and authors the whole ruleset in
+the overlay, in the *same* overlay format (rules as a `{type: patch}` map):
 
 ```json
-{ "template": null, "ruleset": { "...": "full literal ruleset object" } }
+{
+  "template": "blank",
+  "name": "code-quality-copilot-review",
+  "conditions": { "ref_name": { "include": ["~ALL"], "exclude": [] } },
+  "rules": { "copilot_code_review": {} }
+}
 ```
 
-To point a differently-named file at a specific template, set `"template": "<name>"`
-explicitly. There is only **one** mechanism here — template + overlay; a "literal" ruleset
-is just the degenerate case of `template: null` where the overlay carries the entire body.
+There is exactly **one** mechanism — template + overlay. Requiring `template` and shipping
+`blank` removes both the filename-inference magic and the separate `template: null` /
+`ruleset` literal path (an earlier design), so every entry flows through the identical
+merge + validation code path.
 
 ## 4. Bundled templates
 
 Location: `actions/admin/rulesets-check/templates/*.json`, one file per named template,
 keyed by filename (`gitflow-main.json` → template name `gitflow-main`). The current shared
-set across `stitch` / `tpr` / `stitch-etl-poc` is **four** rulesets:
+set across `stitch` / `tpr` / `stitch-etl-poc` is **four** rulesets, plus a `blank` base:
 
 - `gitflow-main`
 - `gitflow-production`
 - `gitflow-next-lifecycle`
 - `gitflow-next-pr`
-
-(Repo-specific rulesets like tpr's `code-quality-copilot-review` are *not* templated —
-they ride as `template: null` literals per §3.2.)
+- `blank` — minimal base (`target: branch`, `enforcement: active`, no rules) for fully
+  custom rulesets (e.g. tpr's `code-quality-copilot-review`), per §3.2.
 
 Templates are plain, **canonical** ruleset JSON objects — `rules` stored as a **list**,
-exactly as GitHub's API returns them — minus the volatile fields already stripped today
-(`id`, `current_user_can_bypass`, `_links`, `node_id`, `created_at`, `updated_at`,
-`bypass_actors`). Reconcile the small per-repo divergences (see §12) into one canonical
-default per template; anything a repo genuinely needs different lives in its overlay.
+exactly as GitHub's API returns them — minus the volatile / identity fields listed in
+`schema/diff-config.json` (`id`, `node_id`, `_links`, `created_at`, `updated_at`,
+`current_user_can_bypass`, `bypass_actors`, `source`, `source_type`). `source` /
+`source_type` are per-repo identity (`"source": "RMI/<repo>"`) with no drift signal; the
+same `strip` list is applied to the remote side at diff time (§6), so shared templates
+don't false-positive on repo name.
+
+`required_status_checks` contexts are **100% per-repo** (each repo's CI job names differ),
+so templates ship an **empty** contexts list and every repo supplies its own via overlay
+(wholesale array replace, §5.3). The check still catches a required check being deleted
+from the live ruleset.
+
+Reconcile the small per-repo divergences (see §12) into one canonical default per template;
+anything a repo genuinely needs different lives in its overlay.
 
 Templates version with the action itself (same tag/SHA), so bumping `RMI/actions` to a
 new template revision is a normal PR + release cycle there, and consumers pick it up on
@@ -177,15 +190,17 @@ Merge rules, applied by `resolve_local.py`:
      the drift found in tpr's `gitflow-main`, which carries two `copilot_code_review`
      rules — the check will now surface it instead of silently picking one.)
 
-3. **Scalar arrays** (e.g. `conditions.ref_name.include`) → **replaced wholesale**: if the
-   overlay provides the array, its value is used verbatim; otherwise the template's is
-   kept. No element-wise union/subtract in v1 — predictable and unambiguous. Covers
-   stitch's extra `refs/heads/demo/**` branch, which is expressed by restating that short
-   list in the overlay.
+3. **All other arrays** (`conditions.ref_name.include`, and
+   `required_status_checks.parameters.required_status_checks` — an array of
+   `{context, integration_id}` objects) → **replaced wholesale**: if the overlay provides
+   the array, its value is used verbatim; otherwise the template's is kept. No element-wise
+   union/subtract or index-merge in v1 — predictable and unambiguous. This covers both
+   stitch's extra `refs/heads/demo/**` branch and the per-repo required-status-check
+   contexts (see §4: templates ship empty contexts, each repo supplies its own list here).
 
-Deferred (additive later, non-breaking): element-wise add/remove sugar for scalar arrays
-(e.g. `{"include": {"add": ["refs/heads/demo/**"]}}`) if restating short lists becomes
-annoying. Not needed for v1.
+Deferred (additive later, non-breaking): element-wise add/remove sugar for arrays
+(e.g. `{"include": {"add": ["refs/heads/demo/**"]}}`) if restating lists becomes annoying.
+Not needed for v1.
 
 **Order-independence bonus.** Because both resolved-local and remote `rules` are keyed by
 `type` before comparison (§6.3), the diff is insensitive to the arbitrary order GitHub's
@@ -198,25 +213,26 @@ Steps inside `actions/admin/rulesets-check/action.yml` (composite, no `concurren
 each consumer's own caller workflow may add `concurrency:` at the job level if desired,
 see §8):
 
-1. **Fetch remote** (`scripts/fetch_remote.sh`, bash + `gh` + `jq` — unchanged from
-   current logic): list ruleset IDs via `gh api /repos/{repo}/rulesets`, fetch each,
-   strip volatile fields, write to `/tmp/remote_rulesets/<sanitized-name>.json`.
+1. **Fetch remote** (`scripts/fetch_remote.sh`, bash + `gh` + `jq`): list ruleset IDs via
+   `gh api /repos/{repo}/rulesets`, fetch each, sanitize name, write the **raw** API
+   response to `/tmp/remote_rulesets/<sanitized-name>.json`. No field stripping here —
+   stripping is centralized in the diff step (§6.3) from `schema/diff-config.json`, so
+   there's a single source of truth and the bash stays trivial.
 
 2. **Resolve local** (`scripts/resolve_local.py`, new): glob `<rulesets_dir>/*.overlay.json`
    (path from the `rulesets_dir` input). For each overlay file:
-   - determine the template: `"template"` field if present (may be `null` for a literal),
-     else the filename stem before `.overlay.json`,
-   - load `templates/<template>.json` from `github.action_path` (skip when `template: null`;
-     the overlay's `ruleset` body is the whole thing),
+   - read the **required** `"template"` field (no filename inference); error if missing or
+     unknown. Use `blank` for fully custom rulesets.
+   - load `templates/<template>.json` from `github.action_path`,
    - deep-merge the overlay onto the template per §5 (objects recurse, `rules` keyed by
-     `type`, scalar arrays replaced), validating the one-rule-per-`type` invariant,
+     `type`, other arrays replaced), validating the one-rule-per-`type` invariant,
    - write each resolved ruleset (canonical, `rules` as a list) to
-     `/tmp/local_rulesets/<sanitized-name>.json` — same directory shape the diff step
-     expects, so downstream logic is identical whether a ruleset came from a template or a
-     literal overlay.
+     `/tmp/local_rulesets/<sanitized-name>.json` — the shared directory shape the diff step
+     expects, so every entry (templated or custom) flows through identical downstream logic.
 
 3. **Diff** (`scripts/diff_rulesets.py`, new, replaces the current `diff --recursive`
-   step): for each matching pair of remote/local JSON files, walk both structures
+   step): first **strip** the `strip` fields (from `schema/diff-config.json`) off **both**
+   sides, then, for each matching pair of remote/local JSON files, walk both structures
    **recursively** and classify at every level — the warn-vs-fail distinction has to be
    recursive because GitHub adds/removes fields *inside* `rules[].parameters` and
    `conditions`, not just at the top level. At each node:
@@ -237,19 +253,21 @@ see §8):
      all — are a separate warning class (`ruleset added/removed entirely`), not a per-key
      diff.
 
-4. **Known-key ignore list** (`schema/tracked-keys.json`): optional companion file listing
-   **dotted key paths** the team has explicitly decided to *always* ignore even if new
-   (e.g. a GitHub-added field nobody cares about yet). Consulted by `diff_rulesets.py`
-   before classifying a path as "new"/"removed" — if it matches the ignore list, skip
-   silently rather than warning every run. Start empty; add entries as warnings get
-   triaged. `bypass_actors` (see §4) is stripped upstream and so is implicitly ignored;
-   if we ever decide to track it, this is where the decision surfaces.
+4. **Diff config** (`schema/diff-config.json`): single companion file with two lists, both
+   consulted by `diff_rulesets.py`:
+   - **`strip`** — top-level fields removed from **both** sides before comparing (volatile,
+     server-assigned, or per-repo identity — never a drift signal). See §4 for the list.
+   - **`ignore`** — **dotted key paths** to *always* skip when classifying new/removed keys
+     (e.g. a GitHub-added field nobody cares about yet). Start empty; add entries as
+     warnings get triaged.
+   `bypass_actors` (see §4) lives in `strip` and so is invisible to the diff; if we ever
+   decide to track it, removing it from `strip` is the one-line switch.
 
-## 7. Reusable-workflow wrapper (optional, decide later)
+## 7. Reusable-workflow wrapper (built)
 
-If the team decides it wants the "zero caller boilerplate" ergonomic (one line under
-`jobs:` instead of a full job with checkout), add a thin `.github/workflows/admin/check-
-rulesets.yml` in `RMI/actions` that itself calls the composite action:
+For the "zero caller boilerplate" ergonomic (one line under `jobs:` instead of a full job
+with checkout), `.github/workflows/admin/check-rulesets.yml` in `RMI/actions` wraps the
+composite action:
 
 ```yaml
 on:
@@ -263,7 +281,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: RMI/actions/actions/admin/rulesets-check@v1
+      - uses: RMI/actions/actions/admin/rulesets-check@main
         with:
           rulesets_dir: ${{ inputs.rulesets_dir }}
 ```
@@ -295,11 +313,14 @@ same diff.
 
 ## 9. Versioning
 
-- Tag `RMI/actions` releases (`v1`, moving forward like `actions/checkout@v4`) rather
-  than having consumers point at `@main`.
-  - Consumers use `@v1` for convenience; anything security-sensitive can pin `@<sha>`.
-- Template changes (new/updated `templates/*.json`) ship as normal commits/releases in
-  `RMI/actions`, same cadence as action-logic changes.
+- **For now, consumers track `@main`.** There is a single known user (the author), so the
+  overhead of a tag-and-release cadence isn't worth it yet — `@main` keeps everyone on the
+  latest logic and templates automatically.
+- Revisit tagged releases (`v1`, moving forward like `actions/checkout@v4`) if/when there
+  are more consumers who need a stable pin; anything security-sensitive can already pin
+  `@<sha>` today.
+- Template changes (new/updated `templates/*.json`) ship as normal commits to `main`, same
+  cadence as action-logic changes.
 
 ## 10. GitHub API schema reference
 
@@ -310,40 +331,64 @@ current.
 
 Optional follow-up (not required for v1, good future addition): a separate, non-blocking
 **scheduled** job in `RMI/actions` that pulls the current `repository-ruleset` schema from
-that repo and diffs its property list against `schema/tracked-keys.json`, opening an issue
+that repo and diffs its property list against `schema/diff-config.json`, opening an issue
 against `RMI/actions` when the upstream schema gains/loses a property — catching drift
 proactively instead of reactively on a consumer repo's PR.
 
 ## 11. Migration steps for existing consumer repos
 
-1. Author `RMI/actions/actions/admin/rulesets-check/` per §2–§6, tag `v1`.
+1. Author `RMI/actions/actions/admin/rulesets-check/` per §2–§6 on `main`.
 2. For each of `stitch`, `stitch-etl-poc`, `tpr`:
    - Diff their existing `.github/rulesets/*.json` against the new bundled templates —
      confirm which map cleanly to `gitflow-{main,production,next-lifecycle,next-pr}` vs.
-     need to stay literal (`template: null`, e.g. tpr's `code-quality-copilot-review`).
-   - Write one `<name>.overlay.json` per ruleset holding only that repo's deltas (most
-     will be `{}` or a few fields; tpr's `gitflow-main` gets the `pull_request` params from
-     §3.2, and its duplicate `copilot_code_review` rule is fixed at the same time).
+     need the `blank` template (e.g. tpr's `code-quality-copilot-review`).
+   - Write one `<name>.overlay.json` per ruleset — each names its `template` and holds only
+     that repo's deltas (most are template-only or a few fields; tpr's `gitflow-main` gets
+     the `pull_request` params from §3.2, and its duplicate `copilot_code_review` rule is
+     fixed at the same time).
    - Replace `.github/workflows/admin-check_rulesets.yml` contents with the thin caller
      from §3.1 (or §7's reusable-workflow form, if built).
    - Delete the old hand-authored ruleset JSON files once overlays cover them.
    - Confirm a run passes (or produces only expected warnings) before merging.
 
-## 12. Open decisions to confirm during implementation
+## 12. Decisions (resolved) & remaining follow-ups
 
-- Exact canonical field values for each of the **four** bundled templates
-  (`gitflow-main`, `gitflow-production`, `gitflow-next-lifecycle`, `gitflow-next-pr`) —
-  pull from current repos' existing JSON and reconcile the known divergences:
-  - `gitflow-main` `pull_request` params differ (tpr: `dismiss_stale_reviews_on_push` +
-    `require_last_push_approval` both `true`; stitch/etl both `false`) — pick the default,
-    the odd repo carries an overlay.
-  - `gitflow-next-lifecycle` `conditions.ref_name.include` differs (stitch adds
-    `refs/heads/demo/**`) — decide whether `demo/**` is a default or a stitch overlay.
-  - tpr's `gitflow-main` duplicate `copilot_code_review` rule is drift — drop it.
-- Initial contents (if any) of `schema/tracked-keys.json` ignore list.
-- Whether `bypass_actors` should stay stripped/untracked (current behavior) or be brought
-  into scope — it's security-relevant (who can skip the rules) but noisy.
-- Whether to build the §7 reusable-workflow wrapper now (recommended — see §7 note) or defer.
-- Whether `resolve_local.py` / `diff_rulesets.py` should validate each overlay against
-  `schema/overlay.schema.json` up front (recommended: yes, fail fast with a clear error
-  rather than a confusing downstream diff).
+### 12.1 Canonical template values (resolved)
+
+Base = **stitch**, with these deliberate adjustments (the standard the repos converge to):
+
+| Template | Field | Canonical default | Notes |
+|---|---|---|---|
+| `gitflow-main` | `pull_request.dismiss_stale_reviews_on_push` | `true` | from tpr; stitch/etl live = `false` (converge) |
+| `gitflow-main` | `pull_request.require_last_push_approval` | `true` | from tpr; stitch/etl live = `false` (converge) |
+| `gitflow-main` | one rule per `type` | enforced | drops tpr's duplicate `copilot_code_review` |
+| `gitflow-production` | `pull_request.required_approving_review_count` | `2` | stitch value; **tpr overrides to 1** via overlay |
+| `gitflow-next-lifecycle` | `conditions.ref_name.include` | includes `refs/heads/demo/**` | from stitch; tpr/etl live lack it (converge) |
+| all (main/prod) | `required_status_checks[].context` list | **empty** | per-repo; each repo overlays its own (§4) |
+
+Everything else follows stitch verbatim. `gitflow-next-pr` is identical across all three
+repos — pure stitch. `source` / `source_type` omitted from templates and stripped remote-side.
+
+### 12.2 Convergence action items (chosen: update live rulesets, not pin overlays)
+
+Because templates are the source of truth and reality must catch up, once this lands the
+**live GitHub rulesets** for these repos need updating (until then their checks report
+drift, by design):
+
+- **stitch, etl**: flip `gitflow-main` `dismiss_stale_reviews_on_push` and
+  `require_last_push_approval` to `true`.
+- **tpr, etl**: add `refs/heads/demo/**` to `gitflow-next-lifecycle` includes.
+- **tpr**: remove the duplicate `copilot_code_review` rule from `gitflow-main`; keep its
+  `gitflow-production` review count at 1 via **overlay** (this one is a permanent per-repo
+  policy, not a convergence gap).
+
+### 12.3 Remaining follow-ups (non-blocking)
+
+- Initial `schema/diff-config.json` `ignore` list: start **empty**; `strip` holds the
+  volatile/identity fields (§4).
+- `bypass_actors` stays in `strip` (untracked) for now (security-relevant but noisy; revisit).
+- §7 reusable-workflow wrapper: **built** (all three repos already use `workflow_call`).
+- Overlay validation: enforced **inline** in `resolve_local.py` (missing/unknown `template`,
+  missing `name`, duplicate rule types, invalid JSON) — fails fast with a clear error and
+  avoids a runtime `jsonschema` dependency. `schema/overlay.schema.json` ships for editor
+  tooling.
