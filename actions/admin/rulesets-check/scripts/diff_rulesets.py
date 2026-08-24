@@ -94,6 +94,13 @@ def values_equal(a, b) -> bool:
     compared as multisets, so element order — and key order within object
     elements — is ignored, while duplicates and values still matter.
 
+    NOTE: the ordering-insensitivity is **one level deep**. `json.dumps` sorts
+    dict keys but does not reorder a list nested *inside* an element, so if a
+    tracked array ever holds elements that themselves contain a list, a reorder
+    of that inner list would read as drift. That doesn't happen with any current
+    ruleset array (their elements are flat scalars or {context, integration_id}-
+    style objects); revisit (canonicalize recursively) if that changes.
+
     (`rules` never reaches here: it's order-normalized into a {type: rule} map by
     normalize_rules and walked as a dict.)
     """

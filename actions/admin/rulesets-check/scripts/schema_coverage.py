@@ -98,12 +98,29 @@ class SchemaWalker:
         return node
 
     def rule_variants(self, items: dict) -> list:
-        """The list of concrete rule schemas under repository-rule."""
+        """The list of concrete rule schemas under repository-rule (a oneOf)."""
         items = self.resolve(items)
         for combiner in ("oneOf", "anyOf", "allOf"):
             if combiner in items:
                 return [self.resolve(v) for v in items[combiner]]
         return [items]
+
+    def merged_properties(self, schema, _depth: int = 0) -> dict:
+        """All ``properties`` of a schema, composing any ``allOf`` members.
+
+        GitHub's OpenAPI sometimes defines a rule variant (or its ``parameters``)
+        as ``{allOf: [{$ref: base}, {properties: {...}}]}``, where the real
+        properties live inside the allOf members rather than at the top level.
+        Reading only top-level ``properties`` would miss them and make those
+        tokens look absent (→ false ``stale``). Merge them instead.
+        """
+        schema = self.resolve(schema)
+        if _depth > 20:
+            return {}
+        props = dict(schema.get("properties", {}))
+        for member in schema.get("allOf", []):
+            props.update(self.merged_properties(member, _depth + 1))
+        return props
 
 
 def schema_tokens(openapi: dict) -> set:
@@ -115,25 +132,37 @@ def schema_tokens(openapi: dict) -> set:
         )
     w = SchemaWalker(schemas)
     ruleset = w.resolve(schemas["repository-ruleset"])
-    props = ruleset.get("properties", {})
+    props = w.merged_properties(ruleset)
 
     tokens: set = set(props.keys())
 
+    rule_types: set = set()
     rules_prop = w.resolve(props.get("rules", {}))
     items = rules_prop.get("items")
     if items:
         for variant in w.rule_variants(items):
-            vprops = variant.get("properties", {})
-            type_schema = vprops.get("type", {})
+            vprops = w.merged_properties(variant)
+            type_schema = w.resolve(vprops.get("type", {}))
             types = list(type_schema.get("enum", []))
             if "const" in type_schema:
                 types.append(type_schema["const"])
-            params = w.resolve(vprops.get("parameters", {}))
-            param_names = list(params.get("properties", {}).keys())
+            param_names = list(w.merged_properties(vprops.get("parameters", {})).keys())
             for t in types:
+                rule_types.add(t)
                 tokens.add(f"rules.{t}")
                 for p in param_names:
                     tokens.add(f"rules.{t}.parameters.{p}")
+
+    # Extracting zero rule types means the OpenAPI shape isn't what this parser
+    # expects. Fail loudly rather than returning a token set that would make
+    # every tracked rule look "stale" (a misleading nightly failure).
+    if not rule_types:
+        raise SystemExit(
+            "::error::schema_coverage extracted 0 rule types from the "
+            "repository-ruleset schema — its OpenAPI shape has likely changed; "
+            "update schema_tokens()."
+        )
+    print(f"schema: parsed {len(rule_types)} rule types, {len(tokens)} tokens.")
     return tokens
 
 
