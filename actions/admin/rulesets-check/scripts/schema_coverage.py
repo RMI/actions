@@ -169,7 +169,7 @@ def main() -> int:
     declared = schema_tokens(load_json(openapi_path))
 
     gaps = declared - covered - acknowledged
-    # Keys we track that the schema doesn't declare (informational only).
+    # Keys we track that the schema doesn't declare (treated as drift; fail the run).
     stale = covered - declared - acknowledged
 
     report = render(gaps, stale)
