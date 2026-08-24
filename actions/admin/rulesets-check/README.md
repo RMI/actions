@@ -172,12 +172,15 @@ job with **debug logging enabled** (GitHub sets `RUNNER_DEBUG=1`).
 
 Because the per-PR check is quiet about fields you don't define, a separate **nightly**
 workflow (`.github/workflows/admin-rulesets-schema-check.yml` + `scripts/schema_coverage.py`)
-compares GitHub's published `repository-ruleset` schema against what the templates cover and
-opens/updates a tracking issue listing any schema property that is **neither tracked nor
-acknowledged**. That's the one place drift in GitHub's schema surfaces — centrally, once —
-instead of on every consumer PR.
+compares GitHub's published `repository-ruleset` schema against what the templates cover. The
+run **fails** on drift either way — a property that is **neither tracked nor acknowledged**
+(GitHub added a field), or a key the templates track that the schema **no longer lists** (a
+rename/removal, which would otherwise start failing every consumer PR). The failed scheduled
+run is the alert (it opens no issue); the step log and job summary list exactly what drifted.
+That's the one place drift in GitHub's schema surfaces — centrally, once — instead of on
+every consumer PR.
 
 `schema/acknowledged-untracked.json` holds the dotted paths you've deliberately decided not
-to track (e.g. `id`, `source`, `bypass_actors`), so the nightly issue doesn't re-flag them.
-Coverage scope for v1 is top-level ruleset properties + rule types + rule parameters;
-`conditions` internals are compared as a whole (documented follow-up to deepen).
+to track (e.g. `id`, `source`, `bypass_actors`), so they don't fail the nightly run. Coverage
+scope for v1 is top-level ruleset properties + rule types + rule parameters; `conditions`
+internals are compared as a whole (documented follow-up to deepen).

@@ -18,10 +18,11 @@ Coverage is compared as dotted tokens (PLAN.md §10 scope — top level + rules)
 Usage:
   schema_coverage.py <templates_dir> <acknowledged_file> <openapi_json>
 
-Exit code is always 0 (a nightly report, not a gate). Writes:
-  * a human report to stdout and $GITHUB_STEP_SUMMARY,
-  * `has_gaps=true|false` to $GITHUB_OUTPUT,
-  * the report body to ./coverage-report.md (for an issue body).
+Exits **non-zero on drift in either direction** — a schema property we don't
+cover (`gaps`), or a key we track that the schema no longer lists (`stale`, a
+rename/removal) — so the nightly scheduled run fails. A failed run is the signal
+(no issue is opened). The human report is written to stdout and
+$GITHUB_STEP_SUMMARY.
 """
 
 from __future__ import annotations
@@ -30,8 +31,6 @@ import json
 import os
 import sys
 from pathlib import Path
-
-REPORT_FILE = "coverage-report.md"
 
 
 def load_json(p: Path):
@@ -176,22 +175,21 @@ def main() -> int:
     report = render(gaps, stale)
     print(report)
 
-    Path(REPORT_FILE).write_text(report)
-
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a") as fh:
             fh.write(report)
-
-    if out := os.environ.get("GITHUB_OUTPUT"):
-        with open(out, "a") as fh:
-            fh.write(f"has_gaps={'true' if gaps else 'false'}\n")
-            fh.write(f"report_file={REPORT_FILE}\n")
 
     print(
         f"coverage: {len(covered)} tracked, {len(declared)} declared, "
         f"{len(gaps)} uncovered, {len(stale)} stale."
     )
-    return 0
+    # Fail the (nightly) run on either drift direction, so a failed scheduled run
+    # is the alert:
+    #   * gaps  — the schema has a property we neither track nor acknowledged.
+    #   * stale — we track a key the schema no longer lists (a GitHub rename/
+    #     removal), which will start failing every consumer PR until the template
+    #     is updated.
+    return 1 if (gaps or stale) else 0
 
 
 if __name__ == "__main__":
