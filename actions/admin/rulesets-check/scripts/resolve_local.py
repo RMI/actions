@@ -171,6 +171,14 @@ def main() -> int:
                 f"{overlay_path}: missing required 'template' field. Name a bundled "
                 f"template (use \"blank\" to author a fully custom ruleset)."
             )
+        # `template` must be a bare bundled-template name, not a path. Reject
+        # non-strings and anything with a path separator so a value like
+        # "../../etc/passwd" or "/abs/path" can't escape templates_dir.
+        if not isinstance(template_name, str) or "/" in template_name or "\\" in template_name:
+            die(
+                f"{overlay_path}: invalid template {template_name!r} — must be a bare "
+                f"bundled template name (e.g. \"gitflow-main\"), not a path."
+            )
 
         template_path = templates_dir / f"{template_name}.json"
         if not template_path.is_file():
