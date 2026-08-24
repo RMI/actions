@@ -4,8 +4,11 @@
 The per-PR check (diff_rulesets.py) only compares keys our templates define, so
 it stays quiet when GitHub adds a field. This job closes that gap: it compares
 GitHub's published ``repository-ruleset`` schema against what our templates
-cover and reports any schema property we neither track nor have explicitly
-acknowledged as out-of-scope.
+cover and flags drift **within the scope we manage** — top-level ruleset
+properties, and parameters of the rule types our templates use. GitHub supports
+~30 rule types; the ones we don't template are features we've chosen not to
+adopt, not drift, so they are ignored (otherwise the report would be dozens of
+false gaps). See ``_in_scope``.
 
 Coverage is compared as dotted tokens (PLAN.md §10 scope — top level + rules):
   * ``<prop>``                          — top-level ruleset property
@@ -35,6 +38,24 @@ from pathlib import Path
 
 def load_json(p: Path):
     return json.loads(Path(p).read_text())
+
+
+def _in_scope(token: str, covered_rule_types: set) -> bool:
+    """Is a declared-but-uncovered token worth flagging as a gap?
+
+    In scope: a top-level ruleset property (``name``, a new field GitHub adds),
+    or a parameter of a rule type we actually template
+    (``rules.<type>.parameters.<param>`` where ``rules.<type>`` is covered).
+
+    Out of scope: a bare ``rules.<type>`` (adopting a new rule type is a product
+    choice, not drift), and parameters of rule types we don't use.
+    """
+    if "." not in token:
+        return True  # top-level ruleset property
+    parts = token.split(".")
+    if len(parts) >= 4 and parts[0] == "rules" and parts[2] == "parameters":
+        return f"rules.{parts[1]}" in covered_rule_types
+    return False
 
 
 # --- what our templates cover -------------------------------------------------
@@ -168,8 +189,21 @@ def main() -> int:
 
     declared = schema_tokens(load_json(openapi_path))
 
-    gaps = declared - covered - acknowledged
-    # Keys we track that the schema doesn't declare (treated as drift; fail the run).
+    # Scope gap-detection to what we actually manage: top-level ruleset
+    # properties, and parameters of the rule types our templates use. GitHub
+    # supports ~30 rule types; we deliberately use a handful, so a bare
+    # `rules.<type>` we don't template (merge_queue, tag_name_pattern, ...) is a
+    # feature we've chosen not to adopt — not drift — and reporting it would bury
+    # the real signal under dozens of false gaps. A new *parameter* on a rule
+    # type we DO use is worth surfacing (we may want to track it).
+    covered_rule_types = {
+        t for t in covered if t.startswith("rules.") and t.count(".") == 1
+    }
+    gaps = {
+        t for t in (declared - covered - acknowledged)
+        if _in_scope(t, covered_rule_types)
+    }
+    # Keys we track that the schema no longer declares (rename/removal).
     stale = covered - declared - acknowledged
 
     report = render(gaps, stale)

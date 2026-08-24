@@ -1,5 +1,5 @@
 {
-  "$comment": "Schema property paths we have deliberately decided NOT to track. Consulted ONLY by the nightly schema-coverage check (scripts/schema_coverage.py) to suppress issues for properties GitHub's ruleset schema has that our templates intentionally omit. This does NOT affect the per-PR diff — that check tracks exactly what the templates define. Paths use dotted form: top-level ruleset props as their name; rule variants as 'rules.<type>'; rule params as 'rules.<type>.parameters.<param>'.",
+  "$comment": "Schema property paths we've deliberately decided NOT to track, so the nightly schema-coverage check (scripts/schema_coverage.py) doesn't fail on them. Does NOT affect the per-PR diff — that tracks exactly what the templates define. Only in-scope paths need listing here: top-level ruleset props (e.g. 'id', 'source'), and parameters of rule types our templates use ('rules.<type>.parameters.<param>'). Rule types we DON'T template (merge_queue, tag_name_pattern, ...) are auto-excluded — no need to list them.",
   "keys": [
     "id",
     "node_id",
