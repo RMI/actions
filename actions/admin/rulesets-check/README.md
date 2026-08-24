@@ -17,7 +17,9 @@ tiny **overlay** file per ruleset instead of hand-authoring full ruleset JSON.
 
 ## Usage
 
-### Direct (composite action)
+Call the composite action from a job in your own workflow (same pattern as the
+`forbidden-patterns` action — the consumer repo owns the workflow, the action owns
+the logic):
 
 ```yaml
 name: Rulesets Checks
@@ -29,19 +31,13 @@ on:
 jobs:
   rulesets:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: RMI/actions/actions/admin/rulesets-check@main
         with:
           rulesets_dir: .github/rulesets   # default; omit to accept it
-```
-
-### Via the reusable workflow
-
-```yaml
-jobs:
-  rulesets:
-    uses: RMI/actions/.github/workflows/admin-check-rulesets.yml@main
 ```
 
 ### Inputs
