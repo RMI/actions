@@ -10,7 +10,7 @@ change showing up in CI.
 - Keys GitHub returns that you don't define (volatile IDs, new schema fields) → ignored.
   Genuinely new schema properties are caught centrally by the [nightly coverage
   check](#nightly-schema-coverage-check), not by nagging every consumer PR.
-- Emits GitHub annotations and a job-summary table.
+- Emits GitHub annotations and a job summary.
 
 Templates (the RMI gitflow defaults) ship *with* this action, so consumer repos keep only a
 tiny **overlay** file per ruleset instead of hand-authoring full ruleset JSON.
@@ -157,7 +157,7 @@ Each drift failure reports the exact dotted path and both values, in three place
 - the **step log** — a full block per failure (`local = …` / `remote = …`);
 - a **check annotation** — a one-line, value-bearing summary (e.g.
   `rules.pull_request.parameters.require_last_push_approval differs — local=true remote=false`);
-- the **job summary** — the same detail in a table.
+- the **job summary** — the same detail, rendered as headings and fenced blocks.
 
 For the whole picture, each *failing* ruleset's resolved-local and raw live JSON are dumped
 in a collapsed `::group::diagnostics: <name>` block in the log. To dump **every** ruleset

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Diff resolved-local rulesets against the live remote rulesets.
 
-Replaces the old ``diff --recursive`` step (PLAN.md §6.3). Uses an **allow-list**
+Replaces the old ``diff --recursive`` step. Uses an **allow-list**
 model: the resolved template+overlay *is* the allow-list — only keys we actually
 define are checked. This makes the per-PR check quiet and precise, and moves the
 "is GitHub's schema fully covered" question to the nightly schema-coverage job
@@ -78,8 +78,12 @@ def normalize_rules(node):
 
 
 def _short(value, limit: int = 300) -> str:
-    """One-line JSON, truncated for annotations (full value stays in the log)."""
-    s = json.dumps(value)
+    """One-line JSON, truncated for annotations (full value stays in the log).
+
+    ``sort_keys`` keeps the rendered value stable across runs even if the API
+    returns object keys in a different order.
+    """
+    s = json.dumps(value, sort_keys=True)
     return s if len(s) <= limit else s[: limit - 1] + "…"
 
 
@@ -158,14 +162,14 @@ def failure_full(f: dict) -> str:
     if f["kind"] == "mismatch":
         return (
             f"Ruleset '{f['name']}': value mismatch at '{f['path']}'\n"
-            f"    local  = {json.dumps(f['local'])}\n"
-            f"    remote = {json.dumps(f['remote'])}"
+            f"    local  = {json.dumps(f['local'], sort_keys=True)}\n"
+            f"    remote = {json.dumps(f['remote'], sort_keys=True)}"
         )
     if f["kind"] == "missing":
         return (
             f"Ruleset '{f['name']}': tracked key '{f['path']}' is missing from the "
             f"live ruleset — the remote does not enforce a setting we require\n"
-            f"    local  = {json.dumps(f['local'])}\n"
+            f"    local  = {json.dumps(f['local'], sort_keys=True)}\n"
             f"    remote = (absent)"
         )
     if f["kind"] == "ruleset_missing":

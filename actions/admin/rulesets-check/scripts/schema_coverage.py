@@ -10,7 +10,7 @@ properties, and parameters of the rule types our templates use. GitHub supports
 adopt, not drift, so they are ignored (otherwise the report would be dozens of
 false gaps). See ``_in_scope``.
 
-Coverage is compared as dotted tokens (PLAN.md §10 scope — top level + rules):
+Coverage is compared as dotted tokens (scope — top level + rules):
   * ``<prop>``                          — top-level ruleset property
   * ``rules.<type>``                    — a rule variant
   * ``rules.<type>.parameters.<param>`` — a rule parameter

@@ -2,8 +2,8 @@
 """Resolve a repo's ruleset overlays against bundled templates.
 
 For each ``<name>.overlay.json`` in the rulesets dir, load its template
-(bundled with the action), deep-merge the overlay on top per the rules in
-PLAN.md §5, and write the resolved, canonical ruleset (rules as a list) to the
+(bundled with the action), deep-merge the overlay on top per the merge rules
+below (also documented in the action README), and write the resolved, canonical ruleset (rules as a list) to the
 output dir. Downstream, diff_rulesets.py compares these against the live remote
 rulesets.
 
