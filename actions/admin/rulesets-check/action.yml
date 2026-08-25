@@ -11,7 +11,7 @@ inputs:
     required: false
     default: ${{ github.repository }}
   github_token:
-    description: "Token used for `gh api` ruleset reads (needs repo admin scope)"
+    description: "Token for `gh api` ruleset reads — the default GITHUB_TOKEN with `contents: read` is sufficient"
     required: false
     default: ${{ github.token }}
 

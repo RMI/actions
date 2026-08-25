@@ -46,7 +46,7 @@ jobs:
 |-------|---------|-------------|
 | `rulesets_dir` | `.github/rulesets` | Directory of `*.overlay.json` files |
 | `repository` | current repo | `owner/name` to check |
-| `github_token` | `github.token` | Token for `gh api` ruleset reads (needs repo admin) |
+| `github_token` | `github.token` | Token for `gh api` ruleset reads (default token; `contents: read` is sufficient) |
 
 ## Overlay files
 
