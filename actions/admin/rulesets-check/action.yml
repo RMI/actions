@@ -1,0 +1,43 @@
+name: "Rulesets check"
+description: "Fail when a repo's live GitHub rulesets drift from their templated definitions (allow-list: only keys the templates define are checked)."
+
+inputs:
+  rulesets_dir:
+    description: "Directory holding this repo's *.overlay.json ruleset files"
+    required: false
+    default: ".github/rulesets"
+  repository:
+    description: "owner/name to check (defaults to the current repo)"
+    required: false
+    default: ${{ github.repository }}
+  github_token:
+    description: "Token for `gh api` ruleset reads — the default GITHUB_TOKEN with `contents: read` is sufficient"
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Fetch remote rulesets
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: |
+        "${{ github.action_path }}/scripts/fetch_remote.sh" \
+          "${{ inputs.repository }}" \
+          "${RUNNER_TEMP}/remote_rulesets"
+
+    - name: Resolve local rulesets (template + overlay)
+      shell: bash
+      run: |
+        python3 "${{ github.action_path }}/scripts/resolve_local.py" \
+          "${{ inputs.rulesets_dir }}" \
+          "${{ github.action_path }}/templates" \
+          "${RUNNER_TEMP}/local_rulesets"
+
+    - name: Diff
+      shell: bash
+      run: |
+        python3 "${{ github.action_path }}/scripts/diff_rulesets.py" \
+          "${RUNNER_TEMP}/local_rulesets" \
+          "${RUNNER_TEMP}/remote_rulesets"

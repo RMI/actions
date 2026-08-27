@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/RMI/actions/actions/admin/rulesets-check/schema/overlay.schema.json",
+  "title": "rulesets-check overlay",
+  "description": "A per-repo ruleset overlay: names a bundled template and layers sparse overrides on top. Use the 'blank' template to author a fully custom ruleset entirely from the overlay. Merge semantics are documented in the action README and PLAN.md §5. NOTE: resolve_local.py enforces the key constraints inline rather than validating against this file; it ships as reference/editor tooling.",
+  "type": "object",
+  "required": ["template"],
+  "properties": {
+    "template": {
+      "description": "Bundled template name (filename stem, e.g. 'gitflow-main'). Required. Use 'blank' for a fully custom ruleset.",
+      "type": "string",
+      "minLength": 1
+    },
+    "rules": {
+      "description": "Rule overrides keyed by rule type (NOT a list). Each value is deep-merged onto the matching template rule; null removes that rule; a new type is added.",
+      "type": "object",
+      "additionalProperties": {
+        "type": ["object", "null"]
+      }
+    },
+    "conditions": { "type": "object" },
+    "enforcement": { "type": "string", "enum": ["active", "evaluate", "disabled"] },
+    "name": { "type": "string" },
+    "target": { "type": "string" }
+  },
+  "additionalProperties": true
+}

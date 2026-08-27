@@ -1,0 +1,14 @@
+{
+  "$comment": "Schema property paths we've deliberately decided NOT to track, so the nightly schema-coverage check (scripts/schema_coverage.py) doesn't fail on them. Does NOT affect the per-PR diff — that tracks exactly what the templates define. Only in-scope paths need listing here: top-level ruleset props (e.g. 'id', 'source'), and parameters of rule types our templates use ('rules.<type>.parameters.<param>'). Rule types we DON'T template (merge_queue, tag_name_pattern, ...) are auto-excluded — no need to list them.",
+  "keys": [
+    "id",
+    "node_id",
+    "_links",
+    "created_at",
+    "updated_at",
+    "current_user_can_bypass",
+    "bypass_actors",
+    "source",
+    "source_type"
+  ]
+}
