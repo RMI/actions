@@ -9,6 +9,7 @@
     "current_user_can_bypass",
     "bypass_actors",
     "source",
-    "source_type"
+    "source_type",
+    "rules.update.parameters.update_allows_fetch_and_merge"
   ]
 }
